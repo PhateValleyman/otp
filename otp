@@ -1,0 +1,71 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Configuration file path
+CONFIG_FILE="$HOME/.config/otp/services.yml"
+
+# Function to retrieve secret key for a given service
+get_secret_key() {
+	local service="$1"
+	local secret_key=$(yq e ".$service" "$CONFIG_FILE" 2>/dev/null)
+	echo "$secret_key"
+}
+
+# Function to generate TOTP code
+generate_totp() {
+	local secret="$1"
+	oathtool --totp -b "$secret"
+}
+
+# Function to display TOTP code for a given service
+display_totp() {
+	local service="$1"
+	local secret_key=$(get_secret_key "$service")
+	if [ -z "$secret_key" ]; then
+		echo "Service '$service' not found in configuration."
+	else
+		echo "Your TOTP code for $service is: $(generate_totp "$secret_key")"
+	fi
+}
+
+# Function to add a new service to the configuration file
+add_service() {
+	local service_key="$1"
+	local service_value="$2"
+	local existing_key=$(yq r "$CONFIG_FILE" "$service_key" 2>/dev/null)
+	if [ -n "$existing_key" ]; then
+		echo "Service '$service_key' already exists in configuration. Ignoring duplicate entry."
+	else
+		yq e ".$service_key = \"$service_value\"" -i "$CONFIG_FILE"
+		echo "Service '$service_key' added to configuration."
+	fi
+}
+
+# Main function
+main() {
+	if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+		echo "Usage: $(basename "$0") [-a|--add <service>:<secret_key>] | <service>"
+		echo "Example: $(basename "$0") Microsoft"
+		exit 0
+	fi
+
+	if [ "$1" == "-a" ] || [ "$1" == "--add" ]; then
+		if [ $# -ne 3 ]; then
+			echo "Usage: $(basename "$0") -a|--add <service>:<secret_key>"
+			exit 1
+		fi
+		service_key=$(echo "$2" | cut -d ":" -f 1)
+		service_value=$(echo "$2" | cut -d ":" -f 2)
+		add_service "$service_key" "$service_value"
+		exit 0
+	fi
+
+	if [ $# -eq 0 ]; then
+		echo "Please provide a service name."
+		exit 1
+	fi
+
+	service="$1"
+	display_totp "$service"
+}
+
+# Execute main function
+main "$@"
